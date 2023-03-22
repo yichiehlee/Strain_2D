@@ -57,12 +57,12 @@ def outputs_2d(Ve, Vn, rot, exx, exy, eyy, MyParams, myVelfield, residfield):
     # PYGMT PLOTS
     pygmt_plots.plot_rotation(ds['rotation'], myVelfield, MyParams.range_strain, MyParams.outdir,
                               MyParams.outdir+'rotation.png');
-    pygmt_plots.plot_dilatation(ds['dilatation'], MyParams.range_strain, MyParams.outdir, positive_eigs,
-                                negative_eigs, MyParams.outdir+'dilatation.png','select_CA_faults.csv','GSA_faults.csv');
-    pygmt_plots.plot_I2nd(ds['I2'], MyParams.range_strain, MyParams.outdir, positive_eigs,
-                          negative_eigs, MyParams.outdir+'I2nd.png','select_CA_faults.csv', 'GSA_faults.csv');
-    pygmt_plots.plot_maxshear(ds['max_shear'], MyParams.range_strain, MyParams.outdir, positive_eigs,
-                              negative_eigs, MyParams.outdir+'max_shear.png','select_CA_faults.csv', 'GSA_faults.csv');
+    pygmt_plots.plot_dilatation(ds['dilatation'], myVelfield, MyParams.range_strain, MyParams.outdir,
+                                MyParams.outdir + 'dilatation.png','select_CA_faults.csv','GSA_faults.csv', positive_eigs, negative_eigs);
+    pygmt_plots.plot_I2nd(ds['I2'], myVelfield, MyParams.range_strain, MyParams.outdir, MyParams.outdir + 'I2nd.png',
+                          'select_CA_faults.csv','GSA_faults.csv'), positive_eigs, negative_eigs;
+    pygmt_plots.plot_maxshear(ds['max_shear'], myVelfield, MyParams.range_strain, MyParams.outdir,
+                              MyParams.outdir + 'max_shear.png', 'select_CA_faults.csv','GSA_faults.csv', positive_eigs, negative_eigs);
     pygmt_plots.plot_azimuth(ds['azimuth'], myVelfield, MyParams.range_strain, MyParams.outdir,
                              MyParams.outdir + 'azimuth.png', positive_eigs, negative_eigs);
 
