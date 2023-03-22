@@ -5,10 +5,10 @@ import pygmt
 import numpy as np
 import pandas as pd
 
-def station_vels_to_arrays(station_vels):
-    """ Unpack station vels into arrays for pygmt plotting of vectors """
-    elon, nlat, e, n = [0], [0], [0], [0];
-    for item in station_vels:
+def station_vels_to_arrays(vectors):
+    """ Unpack a list of station_vels vectors into arrays for pygmt plotting """
+    elon, nlat, e, n = [], [], [], [];
+    for item in vectors:
         elon.append(item.elon);
         nlat.append(item.nlat);
         e.append(item.e)
@@ -16,21 +16,40 @@ def station_vels_to_arrays(station_vels):
     return np.array(elon), np.array(nlat), np.array(e), np.array(n);
 
 
-def plot_rotation(filename, station_vels, region, outdir, outfile):
+def filter_vectors_to_land_only(region, elon, nlat, e, n):
+    maskfile = pygmt.grdlandmask(region=region, spacing='10m', resolution='i');
+    points, newelon, newnlat, newe, newn = [], [], [], [], [];
+    for i in range(len(elon)):
+        points.append(np.array([elon[i], nlat[i]]));   # build np array of points
+    points = np.array(points);
+    if len(points) == 0:
+        return [], [], [], [];
+    values = pygmt.grdtrack(grid=maskfile, points=points);  # values is a pandas DataFrame
+    for i, item in enumerate(values[2]):   # column 2 is the grdtrack output
+        if item > 0.8:  # if grdtrack gives something on land
+            newelon.append(elon[i]);
+            newnlat.append(nlat[i]);
+            newe.append(e[i]);
+            newn.append(n[i]);
+    return newelon, newnlat, newe, newn;
+
+
+def plot_rotation(rotation_array, station_vels, region, outdir, outfile):
     proj = 'M4i'
     fig = pygmt.Figure();
     pygmt.makecpt(cmap="magma", series="0/300/1", truncate="0.3/1.0", background="o", output=outdir+"/mycpt.cpt");
-    fig.basemap(region='-75/-68/17/21', projection=proj, frame="+t\"Rotation\"");
-    fig.grdimage(filename, region='-75/-68/17/21', cmap=outdir+"/mycpt.cpt", dpi=2000);
-    fig.coast(region='-75/-68/17/21', projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
+    fig.basemap(region=region, projection=proj, frame="+t\"Rotation\"");
+    fig.grdimage(rotation_array, region=region, cmap=outdir+"/mycpt.cpt");
+    fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
               map_scale="n0.12/0.12+c" + str(region[2]) + "+w50", frame="1.0");
-    elon, nlat, e, n = station_vels_to_arrays(station_vels);
-    fig.plot(x=elon, y=nlat, style='c0.04i', color='black', pen='0.4p,white');  # station locations
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblack+h0+p1p,black+z0.04', pen='0.6p,black',
-             direction=[e, n]);  # displacement vectors
-    fig.plot(x=region[0] + 0.9, y=region[2] + 0.1, style='v0.20+e+a40+gblack+h0+p1p,black+z0.04', pen='0.6p,black',
-             direction=[[20], [0]]);  # scale vector
-    fig.text(x=region[0] + 0.5, y=region[2] + 0.1, text="20 mm/yr", font='10p,Helvetica,black')
+    if station_vels:
+        elon, nlat, e, n = station_vels_to_arrays(station_vels);
+        fig.plot(x=elon, y=nlat, style='c0.04i', fill='black', pen='0.4p,white');  # station locations
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblack+h0+p1p,black+z0.04', pen='0.6p,black',
+                 direction=[e, n]);  # displacement vectors
+        fig.plot(x=region[0] + 0.9, y=region[2] + 0.1, style='v0.20+e+a40+gblack+h0+p1p,black+z0.04', pen='0.6p,black',
+                 direction=[[20], [0]]);  # scale vector
+        fig.text(x=region[0] + 0.5, y=region[2] + 0.1, text="20 mm/yr", font='10p,Helvetica,black')
     fig.colorbar(position="JCR+w4.0i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="0/300",
                  frame=["x50", "y+L\"Rad/Ka\""]);
     print("Saving rotation figure as %s." % outfile)
@@ -38,69 +57,88 @@ def plot_rotation(filename, station_vels, region, outdir, outfile):
     return;
 
 
-def plot_dilatation(filename, region, outdir, positive_eigs, negative_eigs, outfile, fault_CA, fault_GSA):
+def plot_dilatation(dila_array, station_vels, region, outdir, outfile, fault_CA, fault_GSA, positive_eigs=(), negative_eigs=()):
     proj = 'M4i'
     fig = pygmt.Figure();
-    pygmt.makecpt(cmap="polar", series="-300/300/5", reverse=True, background="o", output=outdir+"/mycpt.cpt");
-    fig.basemap(region='-75/-68/17/21', projection=proj, frame="+t\"Dilatation\"");
-    fig.grdimage(filename, region='-75/-68/17/21', cmap=outdir+"/mycpt.cpt", dpi=2000);
-    fig.coast(region='-75/-68/17/21', projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
+    pygmt.makecpt(cmap="polar", series="-100/100/1", reverse=True, background="o", output=outdir+"/mycpt.cpt");
+    fig.basemap(region=region, projection=proj, frame="+t\"Dilatation\"");
+    fig.grdimage(dila_array, region=region, cmap=outdir+"/mycpt.cpt", dpi=1000);
+    fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
               map_scale="n0.12/0.12+c" + str(region[2]) + "+w50", frame="1.0");
     #fault traces
     segs = pd.read_csv(fault_CA)
     for index, row in segs.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')
     segs2 = pd.read_csv(fault_GSA)
     for index, row in segs2.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')    
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')    
     #plot
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    if station_vels:
+        elon, nlat, e, n = station_vels_to_arrays(station_vels);
+        fig.plot(x=elon, y=nlat, style='c0.02i', fill='black');  # station locations
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[-200], [0]]);
     fig.text(x=region[0] + 0.5, y=region[2] + 0.15, text="200 ns/yr", font='8p,Helvetica,black');
-    fig.colorbar(position="JCR+w2.9i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="-300/300",
+    fig.colorbar(position="JCR+w2.9i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="-100/100",
                  frame=["x50", "y+L\"Nanostr/yr\""]);
     print("Saving dilatation figure as %s." % outfile)
     fig.savefig(outfile, dpi=1000);
     return;
 
 
-def plot_I2nd(filename, region, outdir, positive_eigs, negative_eigs, outfile, fault_CA, fault_GSA):
+def plot_I2nd(I2_array, station_vels, region, outdir, outfile, fault_CA, fault_GSA, positive_eigs=(), negative_eigs=()):
+    plotting_array = np.log10(np.abs(I2_array));  # for plotting the map of second invariant
     proj = 'M4i'
     fig = pygmt.Figure();
     pygmt.makecpt(cmap="batlow", series="-1/5/0.1", background="o", output=outdir+"/mycpt.cpt");
-    fig.basemap(region='-75/-68/17/21', projection=proj, frame="+t\"Second Invariant\"");
-    fig.grdimage(filename, region='-75/-68/17/21', cmap=outdir+"/mycpt.cpt", dpi=2000);
-    fig.coast(region='-75/-68/17/21', projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
+    fig.basemap(region=region, projection=proj, frame="+t\"Second Invariant\"");
+    fig.grdimage(plotting_array, region=region, cmap=outdir+"/mycpt.cpt", dpi=1000);
+    fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
               map_scale="n0.12/0.12+c" + str(region[2]) + "+w50", frame="1.0");
     #fault traces
     segs = pd.read_csv(fault_CA)
     for index, row in segs.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')
     segs2 = pd.read_csv(fault_GSA)
     for index, row in segs2.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')
     #plot
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    if station_vels:
+        elon, nlat, e, n = station_vels_to_arrays(station_vels);
+        fig.plot(x=elon, y=nlat, style='c0.02i', fill='black');  # station locations
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[-200], [0]]);
-    fig.text(x=region[0] + 0.5, y=region[2] + 0.15, text="200 ns/yr", font='8p,Helvetica,black');
+    fig.text(x=region[0] + 0.5, y=region[2] + 0.15, text="200 ns/yr", font='10p,Helvetica,black');
     fig.colorbar(position="JCR+w2.9i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="-1/5",
                  frame=["x1", "y+L\"Log10(I2)\""]);
     print("Saving I2nd figure as %s." % outfile)
@@ -108,53 +146,71 @@ def plot_I2nd(filename, region, outdir, positive_eigs, negative_eigs, outfile, f
     return;
 
 
-def plot_maxshear(filename, region, outdir, positive_eigs, negative_eigs, outfile, fault_CA, fault_GSA):
+def plot_maxshear(max_shear_array, station_vels, region, outdir, outfile, fault_CA, fault_GSA, positive_eigs=(), negative_eigs=()):
     proj = 'M4i'
     fig = pygmt.Figure();
-    pygmt.makecpt(cmap="polar", series="0/300/2", truncate="0/1.0", background="o", output=outdir+"/mycpt.cpt");
-    fig.basemap(region='-75/-68/17/21', projection=proj, frame="+t\"Maximum Shear\"");
-    fig.grdimage(filename, projection=proj, region='-75/-68/17/21', cmap=outdir+"/mycpt.cpt", dpi=2000);
-    fig.coast(region='-75/-68/17/21', projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
+    pygmt.makecpt(cmap="polar", series="0/150/1", truncate="0/1.0", background="o", output=outdir+"/mycpt.cpt");
+    fig.basemap(region=region, projection=proj, frame="+t\"Maximum Shear\"");
+    fig.grdimage(max_shear_array, projection=proj, region=region, cmap=outdir+"/mycpt.cpt", dpi=1000);
+    fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
               map_scale="n0.12/0.12+c" + str(region[2]) + "+w50", frame="1.0");
     #fault traces
     segs = pd.read_csv(fault_CA)
     for index, row in segs.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')
     segs2 = pd.read_csv(fault_GSA)
     for index, row in segs2.iterrows():
         lon1, lat1, lon2, lat2 = row.values
-        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='1p,darkgray')    
+        fig.plot(x=[lon1, lon2], y=[lat1, lat2], pen='0.5p,darkgray')    
     #plot
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    if station_vels:
+        elon, nlat, e, n = station_vels_to_arrays(station_vels);
+        fig.plot(x=elon, y=nlat, style='c0.02i', fill='black');  # station locations
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
     fig.plot(x=region[0] + 1.4, y=region[2] + 0.15, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[-200], [0]]);
-    fig.text(x=region[0] + 0.5, y=region[2] + 0.15, text="200 ns/yr", font='8p,Helvetica,black');
-    fig.colorbar(position="JCR+w2.9i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="0/300",
+    fig.text(x=region[0] + 0.5, y=region[2] + 0.15, text="200 ns/yr", font='10p,Helvetica,black');
+    fig.colorbar(position="JCR+w2.9i+v+o0.7i/0i", cmap=outdir+"/mycpt.cpt", truncate="0/150",
                  frame=["x50", "y+L\"Nanostr/yr\""]);
     print("Saving MaxShear figure as %s." % outfile)
     fig.savefig(outfile, dpi=1000);
     return;
 
 
-def plot_azimuth(filename, region, outdir, positive_eigs, negative_eigs, outfile):
+def plot_azimuth(azimuth_array, station_vels, region, outdir, outfile, positive_eigs=(), negative_eigs=()):
     proj = 'M4i'
     fig = pygmt.Figure();
     pygmt.makecpt(cmap="rainbow", series="0/180/1", background="o", output=outdir+"/mycpt.cpt");
-    fig.basemap(region='-75/-68/17/21', projection=proj, frame="+t\"Azimuth of Max Shortening\"");
-    fig.grdimage(filename, region='-75/-68/17/21', cmap=outdir+"/mycpt.cpt", dpi=2000);
-    fig.coast(region='-75/-68/17/21', projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
+    fig.basemap(region=region, projection=proj, frame="+t\"Azimuth of Max Shortening\"");
+    fig.grdimage(azimuth_array, region=region, cmap=outdir+"/mycpt.cpt");
+    fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue',
               map_scale="n0.12/0.12+c" + str(region[2]) + "+w50", frame="1.0");
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    if station_vels:
+        elon, nlat, e, n = station_vels_to_arrays(station_vels);
+        fig.plot(x=elon, y=nlat, style='c0.02i', fill='black');  # station locations
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.1, y=region[2] + 0.1, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
@@ -168,25 +224,25 @@ def plot_azimuth(filename, region, outdir, positive_eigs, negative_eigs, outfile
     return;
 
 
-def plot_dilatation_1D(region, polygon_vertices, dilatation, outdir, positive_eigs, negative_eigs, outfile):
+def plot_dilatation_1D(region, polygon_outdir_file, outdir, outfile, positive_eigs=(), negative_eigs=()):
     proj = 'M4i'
     fig = pygmt.Figure();
     pygmt.makecpt(cmap="polar", series="-200/200/2", reverse=True, background="o", output=outdir+"/mycpt.cpt");
     fig.basemap(region=region, projection=proj, frame="+t\"Dilatation\"");
     fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue', frame="1.0");
 
-    # color by value
-    for i in range(len(dilatation)):
-        lons = [polygon_vertices[i, 0, 0], polygon_vertices[i, 1, 0], polygon_vertices[i, 2, 0]];
-        lats = [polygon_vertices[i, 0, 1], polygon_vertices[i, 1, 1], polygon_vertices[i, 2, 1]];
-        fig.plot(x=lons, y=lats, zvalue=str(dilatation[i]), pen="thinner,black", color="+z", cmap=outdir+"/mycpt.cpt");
-
-    fig.coast(borders='2', shorelines='1.0p,black', water='lightblue',
-              map_sacle="n0.12/0.12+c" + str(region[2]) + "+w50");
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    fig.plot(data=polygon_outdir_file, pen="thinner,black", fill="+z", cmap=outdir+"/mycpt.cpt");
+    fig.coast(borders='2', shorelines='1.0p,black', water='lightblue', map_scale="n0.12/0.12+c"+str(region[2])+"+w50");
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.1, y=region[2] + 0.1, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
@@ -200,7 +256,7 @@ def plot_dilatation_1D(region, polygon_vertices, dilatation, outdir, positive_ei
     return;
 
 
-def plot_I2nd_1D(region, polygon_vertices, I2nd, outdir, positive_eigs, negative_eigs, outfile):
+def plot_I2nd_1D(region, second_inv_polygon_file, outdir, outfile, positive_eigs=(), negative_eigs=()):
     proj = 'M4i'
     fig = pygmt.Figure();
     pygmt.makecpt(cmap="batlow", series="-1/5/0.1", background="o", output=outdir+"/mycpt.cpt");
@@ -208,17 +264,18 @@ def plot_I2nd_1D(region, polygon_vertices, I2nd, outdir, positive_eigs, negative
     fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue', frame="1.0");
 
     # color by value
-    for i in range(len(I2nd)):
-        lons = [polygon_vertices[i, 0, 0], polygon_vertices[i, 1, 0], polygon_vertices[i, 2, 0]];
-        lats = [polygon_vertices[i, 0, 1], polygon_vertices[i, 1, 1], polygon_vertices[i, 2, 1]];
-        fig.plot(x=lons, y=lats, zvalue=str(I2nd[i]), pen="thinner,black", color="+z", cmap=outdir+"/mycpt.cpt");
-
-    fig.coast(borders='2', shorelines='1.0p,black', water='lightblue',
-              map_scale="n0.12/0.12+c" + str(region[2]) + "+w50");
-    elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue', direction=[e, n]);
-    elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
-    fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black', direction=[e, n]);
+    fig.plot(data=second_inv_polygon_file, pen="thinner,black", fill="+z", cmap=outdir + "/mycpt.cpt");
+    fig.coast(borders='2', shorelines='1.0p,black', water='lightblue', map_scale="n0.12/0.12+c"+str(region[2])+"+w50");
+    if positive_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(positive_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+e+a40+gblue+h0.5+p0.3p,blue+z0.003+n0.3', pen='0.6p,blue',
+                 direction=[e, n]);
+    if negative_eigs:
+        elon, nlat, e, n = station_vels_to_arrays(negative_eigs);
+        elon, nlat, e, n = filter_vectors_to_land_only(region, elon, nlat, e, n);
+        fig.plot(x=elon, y=nlat, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3', pen='0.6p,black',
+                 direction=[e, n]);
     # Scale vector
     fig.plot(x=region[0] + 1.1, y=region[2] + 0.1, style='v0.20+b+a40+gred+h0.5+p0.3p,black+z0.003+n0.3',
              pen='0.6p,black', direction=[[200], [0]]);
@@ -232,7 +289,7 @@ def plot_I2nd_1D(region, polygon_vertices, I2nd, outdir, positive_eigs, negative
     return;
 
 
-def plot_method_differences(strain_dictionary, average_strains, region, outdir, outfile):
+def plot_method_differences(strain_values_ds, average_strains, region, outdir, outfile):
     """Useful for dilatation and max shear based on values in the color bar"""
     pygmt.makecpt(cmap="polar", series="-300/300/2", truncate="-1.0/1.0", background="o", output=outdir+"/mycpt.cpt");
     fig = pygmt.Figure();
@@ -246,13 +303,13 @@ def plot_method_differences(strain_dictionary, average_strains, region, outdir, 
                 with fig.set_panel(panel=index):  # sets the current panel
                     fig.basemap(region=region, projection=proj, frame=["WeSn", "2.0"]);
                     fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black', water='lightblue');
-                    for counter, name in enumerate(strain_dictionary.keys()):
+                    for counter, (varname, da) in enumerate(strain_values_ds.data_vars.items()):
                         if counter == index:
-                            plotting_data = strain_dictionary[name] - average_strains
+                            plotting_data = np.subtract(da, average_strains);  # testing
                             fig.grdimage(plotting_data, projection=proj, region=region, cmap=outdir+"/mycpt.cpt");
                             fig.coast(region=region, projection=proj, borders='1', shorelines='1.0p,black',
                                       water='lightblue');
-                            fig.text(position="BL", text=name+" minus mean", region=region, offset='0/0.1i');
+                            fig.text(position="BL", text=varname+" minus mean", region=region, offset='0/0.1i');
     fig.colorbar(position="JCR+w4.0i+v+o0.7i/-0.5i", cmap=outdir+"/mycpt.cpt", truncate="-300/300",
                  frame=["x50", "y+L\"Nanostr/yr\""]);
     print("Saving Method Differences as %s." % outfile);
